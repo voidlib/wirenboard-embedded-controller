@@ -66,6 +66,7 @@ struct wbec_ctx {
     bool pwrkey_pressed;
     bool linux_booted;
     bool linux_initial_powered_on;
+    bool started_with_wbmz;
     unsigned power_loss_cnt;
     systime_t power_loss_timestamp;
 };
@@ -267,8 +268,10 @@ void wbec_init(void)
         // Питание есть - включаемся в обычном режиме
         // (просто идём дальше)
         // WBMZ включится отдельным алторитмом, если Vin будет более 11.5 В
+        wbec_ctx.started_with_wbmz = false;
     } else {
         // Питания нет - включаем WBMZ
+        wbec_ctx.started_with_wbmz = true;
         linux_cpu_pwr_seq_enable_wbmz();
     }
 
@@ -298,6 +301,14 @@ void wbec_do_periodic_work(void)
         // а линукс в это время работает. Тогда его не надо перезагружать.
         // Факт работы линукса определяется по наличию +3.3В
         if (vmon_ready()) {
+            if (wbec_ctx.started_with_wbmz) {
+                // Если включились от WBMZ - нужно подождать, пока WBMZ запуститься.
+                // Это может занимать до 2 с на WBMZ5
+                if ((!vmon_get_ch_status(VMON_CHANNEL_V_IN)) && (in_state_time_ms() < 2500)) {
+                    break;
+                }
+            }
+
             if ((wbec_info.poweron_reason == REASON_POWER_ON) && (vmon_get_ch_status(VMON_CHANNEL_V33))) {
                 // Если после включения МК +3.3В есть - значит линукс уже работает
                 // Не нужно выводить информацию в уарт
